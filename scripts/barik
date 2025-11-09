@@ -1,0 +1,17 @@
+#!/bin/bash
+set -euo pipefail
+
+APP_CANDIDATES=(
+    "/Applications/Barik.app"
+    "$HOME/Applications/Barik.app"
+)
+
+for app_path in "${APP_CANDIDATES[@]}"; do
+    if [ -d "$app_path" ]; then
+        exec "$app_path/Contents/MacOS/Barik" "$@"
+    fi
+done
+
+echo "Barik.app was not found in /Applications or ~/Applications." >&2
+echo "Install the app or update scripts/barik with the correct path." >&2
+exit 1
