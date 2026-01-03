@@ -51,8 +51,8 @@ class YabaiSpacesProvider: SpacesProvider, SwitchableSpacesProvider, EventBasedS
         // Remove existing socket file
         unlink(socketPath)
 
-        // Create Unix domain socket
-        socketFileDescriptor = socket(AF_UNIX, SOCK_DGRAM, 0)
+        // Create Unix domain socket (SOCK_STREAM for nc -U compatibility)
+        socketFileDescriptor = socket(AF_UNIX, SOCK_STREAM, 0)
         guard socketFileDescriptor >= 0 else {
             print("Failed to create socket")
             return
@@ -82,14 +82,26 @@ class YabaiSpacesProvider: SpacesProvider, SwitchableSpacesProvider, EventBasedS
             return
         }
 
-        // Listen for messages
+        // Listen for incoming connections
+        guard listen(socketFileDescriptor, 5) >= 0 else {
+            print("Failed to listen on socket: \(String(cString: strerror(errno)))")
+            close(socketFileDescriptor)
+            socketFileDescriptor = -1
+            return
+        }
+
+        // Accept connections and read messages
         var buffer = [CChar](repeating: 0, count: 1024)
         while isObserving && socketFileDescriptor >= 0 {
-            let bytesRead = recv(socketFileDescriptor, &buffer, buffer.count - 1, 0)
-            if bytesRead > 0 {
-                buffer[bytesRead] = 0
-                let message = String(cString: buffer)
-                handleSocketMessage(message.trimmingCharacters(in: .whitespacesAndNewlines))
+            let clientFd = accept(socketFileDescriptor, nil, nil)
+            if clientFd >= 0 {
+                let bytesRead = recv(clientFd, &buffer, buffer.count - 1, 0)
+                if bytesRead > 0 {
+                    buffer[bytesRead] = 0
+                    let message = String(cString: buffer)
+                    handleSocketMessage(message.trimmingCharacters(in: .whitespacesAndNewlines))
+                }
+                close(clientFd)
             }
         }
     }
