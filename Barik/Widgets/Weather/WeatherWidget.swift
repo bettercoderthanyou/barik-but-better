@@ -3,7 +3,10 @@ import CoreLocation
 
 /// Weather widget that displays current weather using Open-Meteo API
 struct WeatherWidget: View {
-    @StateObject private var weatherManager = WeatherManager.shared
+    @EnvironmentObject var configProvider: ConfigProvider
+    @ObservedObject private var weatherManager = WeatherManager.shared
+
+    @State private var widgetFrame: CGRect = .zero
 
     var body: some View {
         HStack(spacing: 4) {
@@ -27,8 +30,21 @@ struct WeatherWidget: View {
         .experimentalConfiguration(cornerRadius: 15)
         .frame(maxHeight: .infinity)
         .background(.black.opacity(0.001))
+        .background(
+            GeometryReader { geometry in
+                Color.clear
+                    .onAppear {
+                        widgetFrame = geometry.frame(in: .global)
+                    }
+                    .onChange(of: geometry.frame(in: .global)) { _, newFrame in
+                        widgetFrame = newFrame
+                    }
+            }
+        )
         .onTapGesture {
-            SystemUIHelper.openWeatherDropdown()
+            MenuBarPopup.show(rect: widgetFrame, id: "weather") {
+                WeatherPopup()
+            }
         }
         .onAppear {
             weatherManager.startUpdating()
@@ -36,7 +52,7 @@ struct WeatherWidget: View {
     }
 }
 
-// MARK: - Weather Data Model
+// MARK: - Weather Data Models
 
 struct CurrentWeather {
     let temperature: String
@@ -44,19 +60,55 @@ struct CurrentWeather {
     let condition: String
 }
 
+struct HourlyForecast {
+    let time: Date
+    let timeLabel: String
+    let temperature: String
+    let symbolName: String
+    let precipitationProbability: Int?
+}
+
 // MARK: - Open-Meteo API Response
 
 struct OpenMeteoResponse: Codable {
     let currentWeather: OpenMeteoCurrentWeather
+    let hourly: OpenMeteoHourly?
+    let daily: OpenMeteoDaily?
 
     enum CodingKeys: String, CodingKey {
         case currentWeather = "current_weather"
+        case hourly
+        case daily
     }
 }
 
 struct OpenMeteoCurrentWeather: Codable {
     let temperature: Double
     let weathercode: Int
+}
+
+struct OpenMeteoHourly: Codable {
+    let time: [String]
+    let temperature2m: [Double]
+    let weathercode: [Int]
+    let precipitationProbability: [Int]?
+
+    enum CodingKeys: String, CodingKey {
+        case time
+        case temperature2m = "temperature_2m"
+        case weathercode
+        case precipitationProbability = "precipitation_probability"
+    }
+}
+
+struct OpenMeteoDaily: Codable {
+    let temperature2mMax: [Double]
+    let temperature2mMin: [Double]
+
+    enum CodingKeys: String, CodingKey {
+        case temperature2mMax = "temperature_2m_max"
+        case temperature2mMin = "temperature_2m_min"
+    }
 }
 
 // MARK: - Weather Manager
@@ -66,9 +118,15 @@ final class WeatherManager: NSObject, ObservableObject {
     static let shared = WeatherManager()
 
     @Published private(set) var currentWeather: CurrentWeather?
+    @Published private(set) var hourlyForecast: [HourlyForecast] = []
+    @Published private(set) var locationName: String?
+    @Published private(set) var highTemp: String?
+    @Published private(set) var lowTemp: String?
+    @Published private(set) var precipitation: Double?
     @Published private(set) var isLoading = false
 
     private let locationManager = CLLocationManager()
+    private let geocoder = CLGeocoder()
     private var lastLocation: CLLocation?
     private var updateTimer: Timer?
 
@@ -104,11 +162,20 @@ final class WeatherManager: NSObject, ObservableObject {
 
         isLoading = true
 
+        // Reverse geocode for location name
+        geocoder.reverseGeocodeLocation(location) { [weak self] placemarks, _ in
+            if let placemark = placemarks?.first {
+                Task { @MainActor in
+                    self?.locationName = placemark.locality ?? placemark.administrativeArea ?? "Unknown"
+                }
+            }
+        }
+
         Task {
             do {
                 let lat = location.coordinate.latitude
                 let lon = location.coordinate.longitude
-                let urlString = "https://api.open-meteo.com/v1/forecast?latitude=\(lat)&longitude=\(lon)&current_weather=true&temperature_unit=fahrenheit"
+                let urlString = "https://api.open-meteo.com/v1/forecast?latitude=\(lat)&longitude=\(lon)&current_weather=true&hourly=temperature_2m,weathercode,precipitation_probability&daily=temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&timezone=auto&forecast_days=1"
 
                 guard let url = URL(string: urlString) else {
                     isLoading = false
@@ -118,6 +185,7 @@ final class WeatherManager: NSObject, ObservableObject {
                 let (data, _) = try await URLSession.shared.data(from: url)
                 let response = try JSONDecoder().decode(OpenMeteoResponse.self, from: data)
 
+                // Current weather
                 let temp = Int(response.currentWeather.temperature.rounded())
                 let symbol = symbolName(for: response.currentWeather.weathercode)
                 let condition = conditionName(for: response.currentWeather.weathercode)
@@ -127,6 +195,66 @@ final class WeatherManager: NSObject, ObservableObject {
                     symbolName: symbol,
                     condition: condition
                 )
+
+                // Daily high/low
+                if let daily = response.daily {
+                    if let high = daily.temperature2mMax.first {
+                        self.highTemp = "\(Int(high.rounded()))°"
+                    }
+                    if let low = daily.temperature2mMin.first {
+                        self.lowTemp = "\(Int(low.rounded()))°"
+                    }
+                }
+
+                // Hourly forecast
+                if let hourly = response.hourly {
+                    let dateFormatter = ISO8601DateFormatter()
+                    dateFormatter.formatOptions = [.withFullDate, .withTime, .withDashSeparatorInDate, .withColonSeparatorInTime]
+
+                    let timeFormatter = DateFormatter()
+                    timeFormatter.dateFormat = "ha"
+
+                    let now = Date()
+                    var forecasts: [HourlyForecast] = []
+
+                    for i in 0..<min(hourly.time.count, hourly.temperature2m.count, hourly.weathercode.count) {
+                        // Parse the time string manually (Open-Meteo format: "2024-01-03T14:00")
+                        let timeString = hourly.time[i]
+                        let formatter = DateFormatter()
+                        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm"
+                        formatter.timeZone = TimeZone.current
+
+                        guard let date = formatter.date(from: timeString) else { continue }
+
+                        // Only include future hours
+                        if date > now {
+                            let tempF = Int(hourly.temperature2m[i].rounded())
+                            let sym = symbolName(for: hourly.weathercode[i])
+                            let precip = hourly.precipitationProbability?[safe: i]
+
+                            let label = forecasts.isEmpty ? "Now" : timeFormatter.string(from: date)
+
+                            forecasts.append(HourlyForecast(
+                                time: date,
+                                timeLabel: label,
+                                temperature: "\(tempF)°",
+                                symbolName: sym,
+                                precipitationProbability: precip
+                            ))
+
+                            if forecasts.count >= 6 { break }
+                        }
+                    }
+
+                    // Set precipitation from first hour
+                    if let firstPrecip = hourly.precipitationProbability?.first(where: { $0 > 0 }) {
+                        self.precipitation = Double(firstPrecip) / 100.0
+                    } else {
+                        self.precipitation = nil
+                    }
+
+                    self.hourlyForecast = forecasts
+                }
             } catch {
                 print("Weather fetch error: \(error)")
             }
@@ -135,7 +263,7 @@ final class WeatherManager: NSObject, ObservableObject {
     }
 
     /// Maps Open-Meteo weather codes to SF Symbols
-    private func symbolName(for code: Int) -> String {
+    func symbolName(for code: Int) -> String {
         switch code {
         case 0:
             return "sun.max.fill"
@@ -163,7 +291,7 @@ final class WeatherManager: NSObject, ObservableObject {
     }
 
     /// Maps Open-Meteo weather codes to condition names
-    private func conditionName(for code: Int) -> String {
+    func conditionName(for code: Int) -> String {
         switch code {
         case 0:
             return "Clear"
@@ -225,6 +353,14 @@ extension WeatherManager: CLLocationManagerDelegate {
             manager.authorizationStatus == .authorizedAlways {
             manager.startUpdatingLocation()
         }
+    }
+}
+
+// MARK: - Array Safe Subscript
+
+extension Array {
+    subscript(safe index: Int) -> Element? {
+        return indices.contains(index) ? self[index] : nil
     }
 }
 
