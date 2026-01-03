@@ -21,10 +21,15 @@ class YabaiSpacesProvider: SpacesProvider, SwitchableSpacesProvider, EventBasedS
         guard !isObserving else { return }
         isObserving = true
 
-        // Send initial state
-        if let spaces = getSpacesWithWindows() {
-            let anySpaces = spaces.map { AnySpace($0) }
-            spacesSubject.send(.initialState(anySpaces))
+        // Send initial state asynchronously to avoid blocking main thread
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            if let spaces = self.getSpacesWithWindows() {
+                let anySpaces = spaces.map { AnySpace($0) }
+                DispatchQueue.main.async {
+                    self.spacesSubject.send(.initialState(anySpaces))
+                }
+            }
         }
 
         // Start socket listener
@@ -136,9 +141,14 @@ class YabaiSpacesProvider: SpacesProvider, SwitchableSpacesProvider, EventBasedS
     }
 
     private func refreshSpaces() {
-        if let spaces = getSpacesWithWindows() {
-            let anySpaces = spaces.map { AnySpace($0) }
-            spacesSubject.send(.initialState(anySpaces))
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            if let spaces = self.getSpacesWithWindows() {
+                let anySpaces = spaces.map { AnySpace($0) }
+                DispatchQueue.main.async {
+                    self.spacesSubject.send(.initialState(anySpaces))
+                }
+            }
         }
     }
 
