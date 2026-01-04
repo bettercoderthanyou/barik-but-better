@@ -4,26 +4,23 @@ import Foundation
 /// Helper for triggering macOS system UI elements
 final class SystemUIHelper {
 
-    /// Opens the macOS Notification Center
+    /// Opens the macOS Notification Center by simulating Ctrl+Option+N keypress
     static func openNotificationCenter() {
-        // Check for Accessibility permission first
-        let trusted = AXIsProcessTrustedWithOptions(
-            [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
-        )
+        // Simulate Ctrl+Option+N keyboard shortcut
+        let keyCode: CGKeyCode = 45  // 'n' key
+        let flags: CGEventFlags = [.maskControl, .maskAlternate]
 
-        guard trusted else {
-            // System will show the prompt automatically
-            return
+        // Create and post key down event
+        if let keyDown = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: true) {
+            keyDown.flags = flags
+            keyDown.post(tap: .cghidEventTap)
         }
 
-        let script = """
-            tell application "System Events"
-                tell process "ControlCenter"
-                    click menu bar item "Clock" of menu bar 1
-                end tell
-            end tell
-            """
-        runAppleScript(script)
+        // Create and post key up event
+        if let keyUp = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: false) {
+            keyUp.flags = flags
+            keyUp.post(tap: .cghidEventTap)
+        }
     }
 
     /// Opens the macOS Weather menu bar dropdown
