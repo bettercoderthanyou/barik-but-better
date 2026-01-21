@@ -367,9 +367,9 @@ struct CalendarDayViewPopup: View {
         self.calendarManager = calendarManager
     }
 
-    private let hourHeight: CGFloat = 44
-    private let startHour: Int = 8
-    private let endHour: Int = 18
+    private let hourHeight: CGFloat = 24
+    private let startHour: Int = 9
+    private let endHour: Int = 17
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -387,6 +387,7 @@ struct CalendarDayViewPopup: View {
         .padding(20)
         .fontWeight(.semibold)
         .foregroundStyle(.white)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -397,7 +398,16 @@ private struct TodayColumnView: View {
     let events: [EKEvent]
 
     @State private var currentTime = Date()
+    @State private var showAllDayEvents = false
     private let timer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
+
+    private var allDayEvents: [EKEvent] {
+        events.filter { $0.isAllDay }
+    }
+
+    private var timedEvents: [EKEvent] {
+        events.filter { !$0.isAllDay }
+    }
 
     private var dayOfWeek: String {
         let formatter = DateFormatter()
@@ -414,12 +424,29 @@ private struct TodayColumnView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Header: Day of week + date
-            VStack(alignment: .leading, spacing: 2) {
-                Text(dayOfWeek)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(Color(red: 1.0, green: 0.4, blue: 0.4))
-                Text(dayNumber)
-                    .font(.system(size: 34, weight: .light))
+            VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(dayOfWeek)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(Color(red: 1.0, green: 0.4, blue: 0.4))
+                    Text(dayNumber)
+                        .font(.system(size: 34, weight: .light))
+                }
+
+                // All-day events badge (clickable)
+                if !allDayEvents.isEmpty {
+                    allDayEventsBadge
+                        .onTapGesture {
+                            withAnimation(.smooth(duration: 0.2)) {
+                                showAllDayEvents.toggle()
+                            }
+                        }
+
+                    // Expanded all-day events list
+                    if showAllDayEvents {
+                        allDayEventsList
+                    }
+                }
             }
             .padding(.bottom, 15)
 
@@ -446,8 +473,8 @@ private struct TodayColumnView: View {
                 // Current time indicator
                 currentTimeIndicator
             }
-            .frame(width: 120)
         }
+        .frame(width: 180)
         .onReceive(timer) { _ in
             currentTime = Date()
         }
@@ -480,6 +507,57 @@ private struct TodayColumnView: View {
     private func formatHour(_ hour: Int) -> String {
         let h = hour > 12 ? hour - 12 : hour
         return "\(h)"
+    }
+
+    private var allDayEventsBadge: some View {
+        HStack(spacing: 4) {
+            // Show colored dots for first 3 calendars
+            HStack(spacing: -4) {
+                ForEach(Array(allDayEvents.prefix(3).enumerated()), id: \.offset) { _, event in
+                    Circle()
+                        .fill(Color(event.calendar.cgColor))
+                        .frame(width: 14, height: 14)
+                        .overlay(
+                            Circle()
+                                .stroke(Color.black, lineWidth: 2)
+                        )
+                }
+            }
+
+            Text("\(allDayEvents.count) all-day")
+                .font(.system(size: 12))
+                .foregroundColor(.white)
+
+            Image(systemName: showAllDayEvents ? "chevron.up" : "chevron.down")
+                .font(.system(size: 10))
+                .foregroundColor(.gray)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color.white.opacity(0.1))
+        .cornerRadius(6)
+        .contentShape(Rectangle())
+    }
+
+    private var allDayEventsList: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(allDayEvents, id: \.eventIdentifier) { event in
+                HStack(spacing: 6) {
+                    Rectangle()
+                        .fill(Color(event.calendar.cgColor))
+                        .frame(width: 3, height: 16)
+                        .cornerRadius(1.5)
+
+                    Text(event.title ?? "Untitled")
+                        .font(.system(size: 12))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                }
+                .padding(.vertical, 2)
+            }
+        }
+        .padding(.top, 6)
+        .transition(.opacity.combined(with: .move(edge: .top)))
     }
 }
 
@@ -547,8 +625,8 @@ private struct TomorrowColumnView: View {
                 // Events overlay
                 eventsOverlay
             }
-            .frame(width: 200)
         }
+        .frame(width: 220)
     }
 
     private var allDayEventsBadge: some View {
