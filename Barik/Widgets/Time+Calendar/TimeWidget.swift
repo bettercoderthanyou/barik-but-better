@@ -18,7 +18,11 @@ struct TimeWidget: View {
     }
 
     @State private var currentTime = Date()
-    let calendarManager: CalendarManager
+    @StateObject private var calendarManager: CalendarManager
+
+    init(configProvider: ConfigProvider) {
+        _calendarManager = StateObject(wrappedValue: CalendarManager(configProvider: configProvider))
+    }
 
     @State private var rect = CGRect()
 
@@ -103,10 +107,9 @@ struct TimeWidget: View {
 struct TimeWidget_Previews: PreviewProvider {
     static var previews: some View {
         let provider = ConfigProvider(config: ConfigData())
-        let manager = CalendarManager(configProvider: provider)
 
         ZStack {
-            TimeWidget(calendarManager: manager)
+            TimeWidget(configProvider: provider)
                 .environmentObject(provider)
         }.frame(width: 500, height: 100)
     }
