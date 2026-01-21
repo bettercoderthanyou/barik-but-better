@@ -52,7 +52,7 @@ struct MenuBarView: View {
             BatteryWidget().environmentObject(config)
 
         case "default.time":
-            TimeWidget(calendarManager: CalendarManager(configProvider: config))
+            TimeWidget(configProvider: config)
                 .environmentObject(config)
             
         case "default.nowplaying":
