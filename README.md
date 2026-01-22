@@ -8,9 +8,11 @@ A fork of [barik](https://github.com/mocki-toki/barik) with active improvements 
 
 ## Improvements over barik
 
-- **Event-driven updates** - Replaced polling with event-driven notifications for music playback and space changes. More efficient and responsive.
+- **Drastically reduced CPU usage** - Replaced polling with event-driven notifications for music playback and space changes
 - **Enhanced calendar popup** - Day view with event selection and detailed event information
 - **Click to open music player** - Click on album art, song title, or artist in the now playing popup to open Spotify or Apple Music
+- **Improved WiFi popup** - macOS-style controls and better network information
+- **New weather popup** - Hourly forecast using Open-Meteo API
 - **Fixed popup positioning** - Consistent popup positioning across all widgets
 
 ---
