@@ -283,4 +283,15 @@ final class NowPlayingManager: ObservableObject {
     func nextTrack() {
         NowPlayingProvider.executeCommand { $0.nextTrackCommand }
     }
+
+    /// Opens and activates the music application that is currently playing.
+    func openMusicApp() {
+        guard let song = nowPlaying else { return }
+        if let app = NSWorkspace.shared.runningApplications.first(where: {
+            $0.localizedName == song.appName
+        }),
+        let bundleURL = app.bundleURL {
+            NSWorkspace.shared.open(bundleURL)
+        }
+    }
 }
