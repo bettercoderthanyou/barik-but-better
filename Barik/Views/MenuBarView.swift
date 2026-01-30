@@ -55,7 +55,7 @@ struct MenuBarView: View {
             TimeWidget(configProvider: config)
                 .environmentObject(config)
             
-        case "default.nowplaying":
+        case "default.nowplaying", "default.spotify":
             NowPlayingWidget()
                 .environmentObject(config)
 
