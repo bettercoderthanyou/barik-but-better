@@ -42,23 +42,41 @@ https://github.com/user-attachments/assets/d3799e24-c077-4c6a-a7da-a1f2eee1a07f
 
 ## Quick Start
 
-1. Install **barik** via [Homebrew](https://brew.sh/)
+### Install via Homebrew
 
 ```sh
-brew install --cask mocki-toki/formulae/barik
+brew install --cask bettercoderthanyou/formulae/barik-but-better
 ```
 
-Or you can download from [Releases](https://github.com/mocki-toki/barik/releases), unzip it, and move it to your Applications folder.
+### Or build from source
 
-2. _(Optional)_ To display open applications and spaces, install [**yabai**](https://github.com/koekeishiya/yabai) or [**AeroSpace**](https://github.com/nikitabobko/AeroSpace) and set up hotkeys. For **yabai**, you'll need **skhd** or **Raycast scripts**. Don't forget to configure **top padding** — [here's an example for **yabai**](https://github.com/mocki-toki/barik/blob/main/example/.yabairc).
+1. Clone the repo and build with Xcode:
 
-3. Hide the system menu bar in **System Settings** and uncheck **Desktop & Dock → Show items → On Desktop**.
+```sh
+git clone https://github.com/bettercoderthanyou/barik-but-better.git
+cd barik-but-better
+xcodebuild -scheme Barik -configuration Release build
+```
 
-4. Launch **barik** from the Applications folder.
+2. Copy the built app to Applications:
 
-5. Add **barik** to your login items for automatic startup.
+```sh
+cp -R ~/Library/Developer/Xcode/DerivedData/Barik-*/Build/Products/Release/Barik.app /Applications/
+```
 
-**That's it!** Try switching spaces and see the panel in action.
+> **Note:** Building from source requires Xcode (not just Command Line Tools).
+
+### Set up your desktop
+
+1. _(Optional)_ To display open applications and spaces, install [**yabai**](https://github.com/koekeishiya/yabai) or [**AeroSpace**](https://github.com/nikitabobko/AeroSpace) and set up hotkeys. For **yabai**, you'll need **skhd** or **Raycast scripts**. Don't forget to configure **top padding** — [here's an example for **yabai**](https://github.com/mocki-toki/barik/blob/main/example/.yabairc).
+
+2. Hide the system menu bar in **System Settings** and uncheck **Desktop & Dock → Show items → On Desktop**.
+
+3. Launch **barik** from the Applications folder.
+
+4. Add **barik** to your login items for automatic startup.
+
+**That's it!** Try switching spaces and see the panel in action. You can drag widgets to reorder them directly in the menu bar.
 
 ## Configuration
 
@@ -146,7 +164,7 @@ Unfortunately, macOS does not support access to its API that allows music contro
 1. Spotify (requires the desktop application)
 2. Apple Music (requires the desktop application)
 
-Create an issue so we can add your favorite music service: https://github.com/mocki-toki/barik/issues/new
+Create an issue so we can add your favorite music service: https://github.com/bettercoderthanyou/barik-but-better/issues/new
 
 ## Where Are the Menu Items?
 
@@ -172,4 +190,4 @@ Apple and macOS are trademarks of Apple Inc. This project is not connected to Ap
 
 ## Stars
 
-[![Stargazers over time](https://starchart.cc/mocki-toki/barik.svg?variant=adaptive)](https://starchart.cc/mocki-toki/barik)
+[![Stargazers over time](https://starchart.cc/bettercoderthanyou/barik-but-better.svg?variant=adaptive)](https://starchart.cc/bettercoderthanyou/barik-but-better)
