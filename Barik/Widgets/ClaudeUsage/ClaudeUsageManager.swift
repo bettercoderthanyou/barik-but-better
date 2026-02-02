@@ -62,16 +62,19 @@ final class ClaudeUsageManager: ObservableObject {
     private var statsFileDescriptor: CInt = -1
     private var historyWatchSource: DispatchSourceFileSystemObject?
     private var historyFileDescriptor: CInt = -1
+    private var refreshTimer: Timer?
 
     private var currentConfig: ConfigData = [:]
 
     private let statsCachePath: String
     private let historyPath: String
+    private let projectsPath: String
 
     private init() {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         statsCachePath = "\(home)/.claude/stats-cache.json"
         historyPath = "\(home)/.claude/history.jsonl"
+        projectsPath = "\(home)/.claude/projects"
     }
 
     func startUpdating(config: ConfigData) {
@@ -79,11 +82,20 @@ final class ClaudeUsageManager: ObservableObject {
         fetchData()
         startWatching(path: statsCachePath, source: &statsWatchSource, descriptor: &statsFileDescriptor)
         startWatching(path: historyPath, source: &historyWatchSource, descriptor: &historyFileDescriptor)
+        // Periodically rescan session files since we can't watch them all individually
+        refreshTimer?.invalidate()
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.fetchData()
+            }
+        }
     }
 
     func stopUpdating() {
         stopWatching(source: &statsWatchSource, descriptor: &statsFileDescriptor)
         stopWatching(source: &historyWatchSource, descriptor: &historyFileDescriptor)
+        refreshTimer?.invalidate()
+        refreshTimer = nil
     }
 
     func refresh() {
@@ -137,11 +149,20 @@ final class ClaudeUsageManager: ObservableObject {
         let weeklyLimit = config["weekly-limit"]?.intValue ?? 500
         let plan = config["plan"]?.stringValue ?? "Pro"
 
-        // Get live counts from history.jsonl (always up to date)
-        let (fiveHourCount, fiveHourResetDate, todayMessages) = computeFromHistory()
+        // Get counts from session JSONL files (captures all sessions including Conductor agents)
+        let sessionCounts = computeFromSessions()
+        // Fall back to history.jsonl for direct CLI usage
+        let historyCounts = computeFromHistory()
+
+        // Use whichever source reports more messages (session files are the superset)
+        let fiveHourCount = max(sessionCounts.fiveHourCount, historyCounts.fiveHourCount)
+        let todayMessages = max(sessionCounts.todayCount, historyCounts.todayCount)
+        let fiveHourResetDate = sessionCounts.fiveHourCount >= historyCounts.fiveHourCount
+            ? sessionCounts.fiveHourResetDate
+            : historyCounts.fiveHourResetDate
 
         // Get weekly count from stats-cache.json (may lag behind)
-        var weeklyCount = todayMessages // Start with today from history
+        var weeklyCount = todayMessages // Start with today's count
         if FileManager.default.fileExists(atPath: statsCachePath) {
             do {
                 let statsData = try Data(contentsOf: URL(fileURLWithPath: statsCachePath))
@@ -188,6 +209,72 @@ final class ClaudeUsageManager: ObservableObject {
         return dailyActivity
             .filter { $0.date >= startString && $0.date != todayString }
             .reduce(0) { $0 + $1.messageCount }
+    }
+
+    /// Scans session JSONL files in ~/.claude/projects/ for user messages
+    private func computeFromSessions() -> (fiveHourCount: Int, fiveHourResetDate: Date?, todayCount: Int) {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: projectsPath),
+              let enumerator = fm.enumerator(atPath: projectsPath) else {
+            return (0, nil, 0)
+        }
+
+        let now = Date()
+        let fiveHoursAgo = now.addingTimeInterval(-5 * 3600)
+        let startOfDay = Calendar.current.startOfDay(for: now)
+        let todayPrefix = Self.dateFormatter.string(from: now)
+
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        var fiveHourCount = 0
+        var todayCount = 0
+        var oldestInWindow: Date?
+
+        while let relativePath = enumerator.nextObject() as? String {
+            guard relativePath.hasSuffix(".jsonl") else { continue }
+
+            let fullPath = "\(projectsPath)/\(relativePath)"
+
+            // Skip files not modified since start of day
+            guard let attrs = try? fm.attributesOfItem(atPath: fullPath),
+                  let modDate = attrs[.modificationDate] as? Date,
+                  modDate >= startOfDay else { continue }
+
+            guard let data = fm.contents(atPath: fullPath),
+                  let content = String(data: data, encoding: .utf8) else { continue }
+
+            for line in content.components(separatedBy: "\n") {
+                // Quick pre-filter to avoid JSON parsing on non-user lines
+                guard !line.isEmpty, line.contains("\"type\":\"user\"") || line.contains("\"type\": \"user\"") else {
+                    continue
+                }
+                // Skip tool-result continuations — these are internal API round-trips, not real messages
+                if line.contains("\"tool_result\"") { continue }
+
+                guard let lineData = line.data(using: .utf8),
+                      let entry = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
+                      entry["type"] as? String == "user",
+                      let timestamp = entry["timestamp"] as? String else { continue }
+
+                // Quick prefix check before full ISO parse
+                guard timestamp.hasPrefix(todayPrefix) else { continue }
+
+                guard let date = isoFormatter.date(from: timestamp) else { continue }
+
+                todayCount += 1
+
+                if date >= fiveHoursAgo {
+                    fiveHourCount += 1
+                    if oldestInWindow == nil || date < oldestInWindow! {
+                        oldestInWindow = date
+                    }
+                }
+            }
+        }
+
+        let resetDate = oldestInWindow?.addingTimeInterval(5 * 3600)
+        return (fiveHourCount, resetDate, todayCount)
     }
 
     /// Parses history.jsonl and returns (fiveHourCount, fiveHourResetDate, todayCount)
