@@ -3,26 +3,30 @@ import Foundation
 
 /// Helper for triggering macOS system UI elements
 final class SystemUIHelper {
-
-    /// Opens the macOS Notification Center by simulating Ctrl+Option+N keypress
+    /// Opens the macOS Notification Center by simulating the configured keypress
     static func openNotificationCenter() {
-        // Simulate Ctrl+Option+N keyboard shortcut
-        let keyCode: CGKeyCode = 45  // 'n' key
-        let flags: CGEventFlags = [.maskControl, .maskAlternate]
-
+        // Check for accessibility permissions first
+        guard checkAccessibilityPermissions() else {
+            print("Accessibility permissions not granted")
+            return
+        }
+        
+        let keyCode: CGKeyCode = ConfigManager.shared.config.keybinds.notifications.keyCode
+        let flags: CGEventFlags = ConfigManager.shared.config.keybinds.notifications.flags
+        
         // Create and post key down event
         if let keyDown = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: true) {
             keyDown.flags = flags
             keyDown.post(tap: .cghidEventTap)
         }
-
+        
         // Create and post key up event
         if let keyUp = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: false) {
             keyUp.flags = flags
             keyUp.post(tap: .cghidEventTap)
         }
     }
-
+    
     /// Opens the macOS Weather menu bar dropdown
     static func openWeatherDropdown() {
         let script = """
@@ -39,7 +43,7 @@ final class SystemUIHelper {
             """
         runAppleScript(script)
     }
-
+    
     /// Opens the Weather app
     static func openWeatherApp() {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Weather")!)
@@ -48,7 +52,7 @@ final class SystemUIHelper {
             NSWorkspace.shared.open(weatherURL)
         }
     }
-
+    
     /// Runs an AppleScript
     @discardableResult
     private static func runAppleScript(_ script: String) -> String? {
@@ -62,5 +66,12 @@ final class SystemUIHelper {
             return nil
         }
         return result.stringValue
+    }
+    
+    /// Quick way to check for accessibility permissions
+    static func checkAccessibilityPermissions() -> Bool {
+        let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
+        let accessEnabled = AXIsProcessTrustedWithOptions(options)
+        return accessEnabled
     }
 }

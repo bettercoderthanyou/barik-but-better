@@ -5,6 +5,7 @@ struct RootToml: Decodable {
     var theme: String?
     var yabai: YabaiConfig?
     var aerospace: AerospaceConfig?
+    var keybinds: KeybindsConfig?
     var experimental: ExperimentalConfig?
     var widgets: WidgetsSection
 
@@ -12,6 +13,7 @@ struct RootToml: Decodable {
         self.theme = nil
         self.yabai = nil
         self.aerospace = nil
+        self.keybinds = nil
         self.widgets = WidgetsSection(displayed: [], others: [:])
     }
 }
@@ -33,6 +35,10 @@ struct Config {
     
     var aerospace: AerospaceConfig {
         rootToml.aerospace ?? AerospaceConfig()
+    }
+    
+    var keybinds: KeybindsConfig {
+        rootToml.keybinds ?? KeybindsConfig()
     }
     
     var experimental: ExperimentalConfig {
@@ -287,6 +293,62 @@ struct AerospaceConfig: Decodable {
         } else {
             self.path = "/opt/homebrew/bin/aerospace"
         }
+    }
+}
+
+
+struct KeybindsConfig: Decodable {
+    let notifications: NotificationConfig
+    
+    enum CodingKeys: String, CodingKey {
+        case notifications
+    }
+    
+    init() {
+        self.notifications = NotificationConfig()
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        notifications = try container.decodeIfPresent(NotificationConfig.self, forKey: .notifications) ?? NotificationConfig()
+    }
+}
+
+struct NotificationConfig: Decodable {
+    let keyCode: CGKeyCode
+    var flags: CGEventFlags
+    
+    init() {
+        keyCode = 45  // 'n' key
+        flags = [.maskCommand, .maskAlternate] // Cmd and Opt
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        
+        keyCode = try container.decodeIfPresent(UInt16.self, forKey: .keyCode) ?? 45
+        flags = []
+        
+        let flagStrings = try container.decodeIfPresent(Array<String>.self, forKey: .flags) ?? ["ctrl", "opt"]
+        for flag in flagStrings {
+            
+            switch flag {
+            case "cmd":
+                flags.insert(.maskCommand)
+            case "opt":
+                flags.insert(.maskAlternate)
+            case "ctrl":
+                flags.insert(.maskControl)
+            case "shift":
+                flags.insert(.maskShift)
+            default:
+                print("No flag match for: \(flag)")
+            }
+        }
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case keyCode, flags
     }
 }
 
