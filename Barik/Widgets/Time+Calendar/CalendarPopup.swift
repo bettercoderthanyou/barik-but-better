@@ -2,6 +2,63 @@ import AppKit
 import EventKit
 import SwiftUI
 
+// MARK: - Calendar App Configuration
+
+private enum KnownCalendarApp: String, CaseIterable {
+    case apple = "com.apple.iCal"
+    case notion = "com.cron.electron"
+    case fantastical = "com.flexibits.fantastical2.mac"
+    case busycal = "com.busymac.busycal3"
+
+    var displayName: String {
+        switch self {
+        case .apple: return "Apple Calendar"
+        case .notion: return "Notion Calendar"
+        case .fantastical: return "Fantastical"
+        case .busycal: return "BusyCal"
+        }
+    }
+
+    var isInstalled: Bool {
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: rawValue) != nil
+    }
+
+    static var installedApps: [KnownCalendarApp] {
+        allCases.filter { $0.isInstalled }
+    }
+}
+
+private func configuredCalendarAppBundleId() -> String {
+    let widgetConfig = ConfigManager.shared.globalWidgetConfig(for: "default.time")
+    return widgetConfig["calendar"]?.dictionaryValue?["default-app"]?.stringValue
+        ?? KnownCalendarApp.apple.rawValue
+}
+
+private func configuredCalendarAppName() -> String {
+    let bundleId = configuredCalendarAppBundleId()
+    if let known = KnownCalendarApp(rawValue: bundleId) {
+        return known.displayName
+    }
+    if let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) {
+        return appURL.deletingPathExtension().lastPathComponent
+    }
+    return "Calendar"
+}
+
+private func openEventInCalendarApp(event: EKEvent) {
+    let bundleId = configuredCalendarAppBundleId()
+
+    if bundleId == KnownCalendarApp.apple.rawValue {
+        // calshow: opens Apple Calendar focused on the event's date
+        let timestamp = event.startDate.timeIntervalSinceReferenceDate
+        if let url = URL(string: "calshow:\(timestamp)") {
+            NSWorkspace.shared.open(url)
+        }
+    } else if let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) {
+        NSWorkspace.shared.open(appURL)
+    }
+}
+
 struct CalendarPopup: View {
     let calendarManager: CalendarManager
 
@@ -451,12 +508,12 @@ private struct EventDetailView: View {
 
             // Open in Calendar button
             Button {
-                openInCalendar()
+                openEventInCalendarApp(event: event)
             } label: {
                 HStack {
                     Image(systemName: "calendar")
                         .font(.system(size: 12))
-                    Text("Open in Calendar")
+                    Text("Open in \(configuredCalendarAppName())")
                         .font(.system(size: 12, weight: .medium))
                 }
                 .foregroundColor(.white)
@@ -488,12 +545,6 @@ private struct EventDetailView: View {
         let start = formatter.string(from: event.startDate)
         let end = formatter.string(from: event.endDate)
         return "\(start) — \(end)"
-    }
-
-    private func openInCalendar() {
-        if let url = URL(string: "x-apple-calendar://") {
-            NSWorkspace.shared.open(url)
-        }
     }
 }
 
@@ -660,12 +711,12 @@ private struct ExpandedEventView: View {
 
             // Open in Calendar button
             Button {
-                openInCalendar()
+                openEventInCalendarApp(event: event)
             } label: {
                 HStack {
                     Image(systemName: "calendar")
                         .font(.system(size: 13))
-                    Text("Open in Calendar")
+                    Text("Open in \(configuredCalendarAppName())")
                         .font(.system(size: 13, weight: .medium))
                 }
                 .foregroundColor(.white)
@@ -694,12 +745,6 @@ private struct ExpandedEventView: View {
         let start = formatter.string(from: event.startDate)
         let end = formatter.string(from: event.endDate)
         return "\(start) — \(end)"
-    }
-
-    private func openInCalendar() {
-        if let url = URL(string: "x-apple-calendar://") {
-            NSWorkspace.shared.open(url)
-        }
     }
 }
 
@@ -1224,6 +1269,7 @@ private struct TomorrowColumnView: View {
 struct CalendarSettingsView: View {
     @ObservedObject var calendarManager: CalendarManager
     @State private var denyListState: Set<String> = []
+    @State private var selectedAppBundleId: String = KnownCalendarApp.apple.rawValue
     var onBack: (() -> Void)?
 
     init(_ calendarManager: CalendarManager, onBack: (() -> Void)? = nil) {
@@ -1250,22 +1296,47 @@ struct CalendarSettingsView: View {
 
                 Spacer()
 
-                Text("CALENDARS")
+                Text("SETTINGS")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(.gray)
             }
             .padding(.bottom, 15)
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(calendarManager.allCalendars, id: \.calendarIdentifier) { calendar in
-                        CalendarToggleRow(
-                            calendar: calendar,
-                            isEnabled: !denyListState.contains(calendar.calendarIdentifier),
-                            onToggle: { enabled in
-                                toggleCalendar(calendar, enabled: enabled)
-                            }
-                        )
+                VStack(alignment: .leading, spacing: 16) {
+                    // Default calendar app section
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("OPEN EVENTS WITH")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.gray)
+
+                        ForEach(KnownCalendarApp.installedApps, id: \.rawValue) { app in
+                            CalendarAppRow(
+                                app: app,
+                                isSelected: selectedAppBundleId == app.rawValue,
+                                onSelect: {
+                                    selectedAppBundleId = app.rawValue
+                                    saveDefaultApp(app.rawValue)
+                                }
+                            )
+                        }
+                    }
+
+                    // Calendar visibility section
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("SHOW / HIDE")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.gray)
+
+                        ForEach(calendarManager.allCalendars, id: \.calendarIdentifier) { calendar in
+                            CalendarToggleRow(
+                                calendar: calendar,
+                                isEnabled: !denyListState.contains(calendar.calendarIdentifier),
+                                onToggle: { enabled in
+                                    toggleCalendar(calendar, enabled: enabled)
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -1277,6 +1348,7 @@ struct CalendarSettingsView: View {
         .foregroundStyle(.white)
         .onAppear {
             loadDenyListFromConfig()
+            loadDefaultAppFromConfig()
         }
     }
 
@@ -1289,6 +1361,23 @@ struct CalendarSettingsView: View {
         } else {
             denyListState = []
         }
+    }
+
+    private func loadDefaultAppFromConfig() {
+        let widgetConfig = ConfigManager.shared.globalWidgetConfig(for: "default.time")
+        if let calendarConfig = widgetConfig["calendar"]?.dictionaryValue,
+           let appId = calendarConfig["default-app"]?.stringValue, !appId.isEmpty {
+            selectedAppBundleId = appId
+        } else {
+            selectedAppBundleId = KnownCalendarApp.apple.rawValue
+        }
+    }
+
+    private func saveDefaultApp(_ bundleId: String) {
+        ConfigManager.shared.updateConfigValue(
+            key: "widgets.default.time.calendar.default-app",
+            newValue: bundleId
+        )
     }
 
     private func toggleCalendar(_ calendar: EKCalendar, enabled: Bool) {
@@ -1305,6 +1394,35 @@ struct CalendarSettingsView: View {
             key: "widgets.default.time.calendar.deny-list",
             newValue: tomlArray
         )
+    }
+}
+
+private struct CalendarAppRow: View {
+    let app: KnownCalendarApp
+    let isSelected: Bool
+    let onSelect: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text(app.displayName)
+                .font(.system(size: 13))
+                .foregroundColor(.white)
+                .lineLimit(1)
+
+            Spacer()
+
+            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                .font(.system(size: 18))
+                .foregroundColor(isSelected ? .blue : .gray.opacity(0.5))
+        }
+        .padding(.vertical, 6)
+        .padding(.horizontal, 10)
+        .background(Color.white.opacity(0.05))
+        .cornerRadius(8)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onSelect()
+        }
     }
 }
 
