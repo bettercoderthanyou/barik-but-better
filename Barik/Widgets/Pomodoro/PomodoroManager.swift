@@ -9,8 +9,20 @@ enum PomodoroPhase: String {
     case onLongBreak = "Long Break"
 }
 
+private class PomodoroNotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound])
+    }
+}
+
 class PomodoroManager: ObservableObject {
     static let shared = PomodoroManager()
+
+    private let notificationDelegate = PomodoroNotificationDelegate()
 
     @Published var phase: PomodoroPhase = .idle
     @Published var timeRemaining: Int = 0
@@ -41,6 +53,7 @@ class PomodoroManager: ObservableObject {
     private var timerCancellable: AnyCancellable?
 
     init() {
+        UNUserNotificationCenter.current().delegate = notificationDelegate
         requestNotificationPermission()
     }
 
