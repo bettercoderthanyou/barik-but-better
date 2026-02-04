@@ -341,6 +341,16 @@ final class ConfigManager: ObservableObject {
         return newLines.joined(separator: "\n")
     }
 
+    func toggleWidget(_ widgetId: String) {
+        var items = config.rootToml.widgets.displayed
+        if let index = items.firstIndex(where: { $0.id == widgetId }) {
+            items.remove(at: index)
+        } else {
+            items.append(TomlWidgetItem(id: widgetId, inlineParams: [:]))
+        }
+        updateDisplayedWidgets(items)
+    }
+
     func globalWidgetConfig(for widgetId: String) -> ConfigData {
         config.rootToml.widgets.config(for: widgetId) ?? [:]
     }
