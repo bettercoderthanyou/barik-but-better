@@ -25,6 +25,18 @@ struct MenuBarView: View {
 
         HStack(spacing: 0) {
             HStack(spacing: configManager.config.experimental.foreground.spacing) {
+                Color.clear
+                    .frame(width: 1)
+                    .onDrop(
+                        of: [UTType.text],
+                        delegate: EdgeDropDelegate(
+                            targetIndex: 0,
+                            items: $widgetItems,
+                            draggingItem: $draggingItem,
+                            onReorderComplete: persistWidgetOrder
+                        )
+                    )
+
                 ForEach(widgetItems, id: \.instanceID) { item in
                     buildView(for: item)
                         .opacity(draggingItem?.instanceID == item.instanceID ? 0.5 : 1.0)
@@ -122,6 +134,41 @@ struct MenuBarView: View {
         default:
             Text("?\(item.id)?").foregroundColor(.red)
         }
+    }
+}
+
+struct EdgeDropDelegate: DropDelegate {
+    let targetIndex: Int
+    @Binding var items: [TomlWidgetItem]
+    @Binding var draggingItem: TomlWidgetItem?
+    let onReorderComplete: () -> Void
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggingItem = nil
+        onReorderComplete()
+        return true
+    }
+
+    func dropEntered(info: DropInfo) {
+        guard let dragging = draggingItem,
+              let fromIndex = items.firstIndex(where: { $0.instanceID == dragging.instanceID }),
+              fromIndex != targetIndex
+        else { return }
+
+        withAnimation(.smooth(duration: 0.2)) {
+            items.move(
+                fromOffsets: IndexSet(integer: fromIndex),
+                toOffset: targetIndex
+            )
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func validateDrop(info: DropInfo) -> Bool {
+        draggingItem != nil
     }
 }
 
